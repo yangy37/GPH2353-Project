@@ -7,25 +7,64 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(haven)
+library(psych)
+library(ggplot2)
+require(lmtest)
+library(MASS)
+library(psych)
+require(leaps)
+library(pander)
+library(corrplot)
+library(faraway)
+require(readr)
+require(r02pro)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-#hfsudkzdhfuk
+Data Preparation
+```{r}
+my_data <- read.csv("heart_failure_clinical_records_dataset.csv")
+head(my_data)
+dim(my_data)
+for (i in colnames(my_data)) {
+  print(sum(is.na(my_data$i)))
+}
+View(my_data)
+dim(my_data)
+### START
+summary(my_data)
+names(my_data)
+my_data = na.omit(my_data)
+View(my_data)
 ```
 
-## Including Plots
+Model Selection
+```{r}
+model <- lm(DEATH_EVENT~., data = my_data)
+summary(model)
+model_update <- update(model, . ~ . -anaemia - creatinine_phosphokinase - diabetes
+                       - high_blood_pressure - platelets - serum_sodium - sex 
+                       - smoking)
+summary(model_update)
 
-You can also embed plots, for example:
+model2 <- regsubsets(DEATH_EVENT~., data = my_data)
+rs <- summary(model2)
+rs
+rs$which
+n <- nrow(my_data)
+p <- 2:ncol(my_data)
+AIC <- n*log(rs$rss / n) + 2 * p
+AIC
+plot(AIC ~ I(p - 1), ylab = "AIC", xlab = "Number of Predictors", col = "blue")
+which.min(AIC)
+model2_AIC <- lm(DEATH_EVENT ~ age + anaemia + creatinine_phosphokinase + diabetes
+                 + ejection_fraction + high_blood_pressure + platelets, data = my_data)
+summary(model2_AIC)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+VIF
+```{r}
+View(cor(sample[,c(-4,-6)]))
+x <- model.matrix(model2_AIC)[,-1]
+vif(x)
+```
