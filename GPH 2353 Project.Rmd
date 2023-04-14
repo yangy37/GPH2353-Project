@@ -5,68 +5,132 @@ date: "2023-03-14"
 output: pdf_document
 ---
 
-```{r setup, include=FALSE}
+```{r, warning=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(haven)
 library(psych)
 library(ggplot2)
-require(lmtest)
+library(lmtest)
 library(MASS)
 library(psych)
-require(leaps)
+library(leaps)
 library(pander)
 library(corrplot)
+library(car)
 library(faraway)
-require(readr)
-require(r02pro)
+library(readr)
+library(lmtest)
+library(corrplot)
+library(r02pro)
 ```
 
-<<<<<<< HEAD
+HEAD
 Data Preparation
 ```{r}
 my_data <- read.csv("IHDP.csv")
 head(my_data)
 dim(my_data)
 for (i in colnames(my_data)) {
+  print(i)
   print(sum(is.na(my_data$i)))
 }
-View(my_data)
 dim(my_data)
 ### START
 summary(my_data)
 names(my_data)
+head(my_data)
 my_data = na.omit(my_data)
-View(my_data)
-
+```
+Check Correlation between each variables
+```{r}
+M=cor(my_data)
+corrplot(M,method = "number",type="upper",number.cex = 0.6) # make correlation plot
+```
+Define Training and test dataset
+```{r}
+set.seed(0)
+tr_size <- nrow(my_data) * 0.7 # training sample size
+tr_ind <-sample(nrow(my_data), tr_size)
+data_tr <-my_data[tr_ind, ] # training data
+data_te <-my_data[-tr_ind, ] # test data
+ncol(my_data)
+nrow(my_data)
+nrow(data_tr)
+nrow(data_te)
 ```
 
-Model Selection
+Train Model
 ```{r}
-model <- lm(DEATH_EVENT~., data = my_data)
+model <- lm(ppvtr.36~., data = data_tr)
 summary(model)
-model_update <- update(model, . ~ . -anaemia - creatinine_phosphokinase - diabetes
-                       - high_blood_pressure - platelets - serum_sodium - sex 
-                       - smoking)
-summary(model_update)
+alias(model)
 
-model2 <- regsubsets(DEATH_EVENT~., data = my_data)
-rs <- summary(model2)
-rs
-rs$which
-n <- nrow(my_data)
-p <- 2:ncol(my_data)
-AIC <- n*log(rs$rss / n) + 2 * p
-AIC
-plot(AIC ~ I(p - 1), ylab = "AIC", xlab = "Number of Predictors", col = "blue")
-which.min(AIC)
-model2_AIC <- lm(DEATH_EVENT ~ age + anaemia + creatinine_phosphokinase + diabetes
-                 + ejection_fraction + high_blood_pressure + platelets, data = my_data)
-summary(model2_AIC)
+
+par (mfrow = c(2,2))
+plot (model)
+shapiro.test(model$residuals) 
+dwtest(model) 
+bptest(model) 
+
+AA<-rstudent(model) # Compute studentized residuals to check outliers.
+p<-ncol(data_tr)
+n<-nrow(data_tr)
+which(abs(AA)>qt(1-0.05/(n*2),n-p-1))
+plot(model,which=4)
+vif(model)
+
+model1<-lm(ppvtr.36~. -white-ltcoll-college,data_tr)
+summary(model1)
+vif(model1)
+step(model1) 
+```
+
+AIC Selection
+```{r}
+lmod_AIC_B<-lm(ppvtr.36 ~ prenatal+dayskidh +b.marr+hs+work.dur+treat
+               +momed+hispanic+black, data = data_tr) # AIC selected model
+sum_AIC_B<-summary(lmod_AIC_B)
+sum_AIC_B
+vif(lmod_AIC_B) 
+```
+BIC Selection
+```{r}
+fit_null<-lm(ppvtr.36~1,data_tr)
+step(fit_null, scope = list(lower = fit_null, upper = model1), direction = "both",
+criterion = "BIC", k = log(n))
+lmod_BIC_BO<-lm(ppvtr.36 ~ white + momed + work.dur + treat + b.marr,data_tr) # BIC selected model
+sum_BIC_BO<-summary(lmod_BIC_BO)
+sum_BIC_BO
+vif(lmod_BIC_BO) 
 
 ```
-VIF
+
+lar selection
 ```{r}
-View(cor(sample[,c(-4,-6)]))
-x <- model.matrix(model2_AIC)[,-1]
-vif(x)
+x = as.matrix(data_tr[,c(1:20)])
+y = as.matrix(data_tr[,21])
+library(lars)
+lar1 <-lars(x,y,type = "lasso") # Use Lasso
+lar1
+plot(lar1)
+sum1<-summary(lar1)
+sum1
+lar1$Cp[which.min(lar1$Cp)]
+lar1$beta
+
+lmod_la<-glm(ppvtr.36~.-white - ltcoll -college,family='gaussian',data_tr) # Use glm
+summary(lmod_la)
+
+boxcox(lmod_AIC_B, plotit=T)
+b<-boxcox(lmod_AIC_B, plotit=T, lambda=seq(1.3, 1.7,by=0.05))
+b
+I=which(b$y==max(b$y))
+b$x[I]
+```
+
+Prediction
+```{r}
+result<-predict(lmod_AIC_B,newdata = data_te) # Prediction
+error <- sum((data_te$ppvtr.36 - result)^2)
+error
 ```
