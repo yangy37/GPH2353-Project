@@ -77,7 +77,7 @@ p<-ncol(data_tr)
 n<-nrow(data_tr)
 which(abs(AA)>qt(1-0.05/(n*2),n-p-1))
 plot(model,which=4)
-vif(model)
+#vif(model)
 
 model1<-lm(ppvtr.36~. -white-ltcoll-college,data_tr)
 summary(model1)
