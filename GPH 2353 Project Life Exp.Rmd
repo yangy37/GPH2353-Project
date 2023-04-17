@@ -1,6 +1,6 @@
 ---
 title: "2353 Final Project Life Exp"
-author: "Yi Yang"
+author: "Xiaolong Wang, Weiyi(David) Gong, Zeming Ren, Yi Yang"
 date: "2023-04-14"
 output: pdf_document
 ---
@@ -85,9 +85,10 @@ plot (model)
 hist(rstandard(model), main = "", xlab = "Standardized Residuals")
 par(mfrow = c (1,1))
 
-shapiro.test(model$residuals) # less than .05 so it is normal distribute.
+shapiro.test(model$residuals) # less than .05 so it is not normal distribute.
 dwtest(model) # value is close to 2.0, so there is no autocorrelation detected.
-bptest(model) # p-value is less than 0.05, we reject null hypothesis, no heteroscedasticity in model. 
+bptest(model) # p-value is less than 0.05, we reject null hypothesis, 
+#no heteroscedasticity in model. 
 
 AA<-rstudent(model) # Compute standardized residuals to check outlines.
 p<-ncol(data_tr)
@@ -109,10 +110,13 @@ lmod_AIC_B<-lm(Life.expectancy ~ Adult.Mortality + infant.deaths + Alcohol +
                data = data_tr) # AIC selected model
 sum_AIC_B<-summary(lmod_AIC_B)
 sum_AIC_B
-shapiro.test(lmod_AIC_B$residuals) # less than .05 so it is normal distribute.
+shapiro.test(lmod_AIC_B$residuals) # less than .05 so it is not normal distribute.
 dwtest(lmod_AIC_B) # value is close to 2.0, so there is no autocorrelation detected.
-bptest(lmod_AIC_B) # p-value is less than 0.05, we reject null hypothesis, no heteroscedasticity in model.
-vif(lmod_AIC_B) # infant.deaths, and under.five.deaths are greater than 5. severe correlation between these two and other predictors, the coefficient estimates and p-values in the regression output are likely unreliable. 
+bptest(lmod_AIC_B) # p-value is less than 0.05, we reject null hypothesis, 
+#no heteroscedasticity in model.
+vif(lmod_AIC_B) # infant.deaths, and under.five.deaths are greater than 5. 
+#severe correlation between these two and other predictors, the coefficient 
+#estimates and p-values in the regression output are likely unreliable. 
 ```
 
 BIC Selection
@@ -126,10 +130,12 @@ lmod_BIC_BO<-lm(Life.expectancy ~ Schooling + HIV.AIDS + Adult.Mortality +
                   percentage.expenditure + BMI + Diphtheria + Alcohol,data_tr) # BIC selected model
 sum_BIC_BO<-summary(lmod_BIC_BO)
 sum_BIC_BO
-shapiro.test(sum_BIC_BO$residuals) # less than .05 so it is normal distribute.
+shapiro.test(sum_BIC_BO$residuals) # less than .05 so it is not normal distribute.
 dwtest(sum_BIC_BO) # value is close to 2.0, so there is no autocorrelation detected.
-bptest(sum_BIC_BO) # p-value is less than 0.05, we reject null hypothesis, no heteroscedasticity in model.
-vif(lmod_BIC_BO) #All value between 1 and 5 indicates moderate correlation between a given predictor variable and other predictor variables in the model
+bptest(sum_BIC_BO) # p-value is less than 0.05, we reject null hypothesis, 
+#no heteroscedasticity in model.
+vif(lmod_BIC_BO) #All value between 1 and 5 indicates moderate correlation 
+#between a given predictor variable and other predictor variables in the model
 ```
 
 
@@ -138,7 +144,6 @@ vif(lmod_BIC_BO) #All value between 1 and 5 indicates moderate correlation betwe
 set.seed(0)
 x_tr  = as.matrix(data_tr[,c(2:ncol(data_tr))])
 y_tr  = as.matrix(data_tr[,1])
-
 lar1 <-lars(x_tr,y_tr,type = "lasso")
 lar1
 plot(lar1)
@@ -150,16 +155,20 @@ lar1$beta
 lmod_la<-glm(Life.expectancy ~.,family='gaussian',data_tr)
 sum_la<-summary(lmod_la)
 sum_la
-shapiro.test(lmod_la$residuals)# less than .05 so it is normal distribute.
+with(sum_la, 1 - deviance/null.deviance) # Adjusted r square
+shapiro.test(lmod_la$residuals)# less than .05 so it is not normal distribute.
 dwtest(lmod_la) # value is close to 2.0, so there is no autocorrelation detected.
-bptest(lmod_la) # p-value is less than 0.05, we reject null hypothesis, no heteroscedasticity in model.
-vif(lmod_la) # infant.deaths, under.five.deaths, and GDP are greater than 5. severe correlation between these two and other predictors, the coefficient estimates and p-values in the regression output are likely unreliable.
+bptest(lmod_la) # p-value is less than 0.05, we reject null hypothesis, no 
+#heteroscedasticity in model.
+vif(lmod_la) # infant.deaths, under.five.deaths, and GDP are greater than 5. 
+#severe correlation between these two and other predictors, the coefficient 
+#estimates and p-values in the regression output are likely unreliable.
 ```
 
-Transformation - don't really need transformation. 
+Transformation - need transformation to normal distribution
 ```{r}
 boxcox(model, plotit=T)
-b<-boxcox(model, plotit=T, lambda=seq(0.7, 1.5,by=0.05))
+b<-boxcox(model, plotit=T, lambda=seq(0.7, 1.5,by=0.01))
 b
 I=which(b$y==max(b$y))
 I
@@ -170,16 +179,19 @@ lmod_trans<-lm(Life.expectancy ^(1.136) ~ Adult.Mortality + infant.deaths + Alco
                  Income.composition.of.resources + Schooling + Developing, 
                data = data_tr)
 summary(lmod_trans)
-shapiro.test(lmod_trans$residuals) # less than .05 so it is normal distribute.
+shapiro.test(lmod_trans$residuals) # less than .05 so it is not normal distribute.
 dwtest(lmod_la) # value is close to 2.0, so there is no autocorrelation detected.
-bptest(lmod_trans) # p-value is less than 0.05, we reject null hypothesis, no heteroscedasticity in model.
+bptest(lmod_trans) # p-value is less than 0.05, we reject null hypothesis, no 
+#heteroscedasticity in model.
 confint(lmod_trans) # get confident interval for lmod_trans
-vif(lmod_trans) # infant.deaths, and under.five.deaths are greater than 5. severe correlation between these two and other predictors, the coefficient estimates and p-values in the regression output are likely unreliable. 
+vif(lmod_trans) # infant.deaths, and under.five.deaths are greater than 5. 
+#severe correlation between these two and other predictors, the coefficient 
+#estimates and p-values in the regression output are likely unreliable. 
 ```
 
 Prediction
 ```{r}
-
+# Calculate MSE for each model
 result<-predict(model,newdata = data_te,interval='prediction') # Prediction
 error <- sum((data_te$Life.expectancy - result)^2)
 error
@@ -200,7 +212,7 @@ result5<-predict(lmod_la,newdata = data_te,interval='prediction') # Prediction
 error5 <- sum((data_te$Life.expectancy - result5)^2)
 error5
 
-which.min(c(error, error2, error3, error4, error5)) # Check which method provide lowest errors. 
+which.min(c(error, error2, error3, error4, error5)) # Check which method provide lowest MSE.  
 
 # Lasso model has lowest MSE. 
 x <- model.matrix(lmod_la)

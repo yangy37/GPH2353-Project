@@ -1,0 +1,406 @@
+---
+title: |
+    | \huge 2353 Final Project Life Exp\vspace{1cm}
+author: |
+   | \large Yi Yang & Weiyi(David) Gong & Xiaolong Wang & Zeming Ren  \vspace{1cm}
+date: '2023-04-15'
+toc: yes
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(haven)
+library(psych)
+library(tidyverse)
+library(ggplot2)
+library(lmtest)
+library(MASS)
+library(psych)
+library(lars)
+library(leaps)
+library(glmnet)
+library(pander)
+library(caret)
+library(corrplot)
+library(car)
+library(faraway)
+library(readr)
+library(corrplot)
+library(r02pro)
+library(pander)
+library(lares)
+library(performance)
+library(sandwich)
+library(reshape2)
+library(ggprism)
+library(ggalt)
+library(gridExtra)
+library(grid)
+library(bestglm)
+```
+
+\newpage
+
+# Data Preparation and cleaning
+
+## 1.Data Cleaning and Descriptive
+```{r}
+my_data <- read.csv("Life Expectancy Data.csv")
+my_data1 <- my_data %>% 
+  na.omit() %>%
+  mutate(Developing = as.integer(Status == "Developing")) # Change status to numeric
+my_data1<-my_data1[,-c(1, 2, 3)] # remove country, year, status
+pander(summary(my_data1),caption='Descriptive Statistics of The Data')
+```
+
+```{r}
+pander(head(my_data1),caption='First six rows of data')
+```
+
+## 2.Define Training and test dataset
+```{r}
+set.seed(0)
+tr_size <- nrow(my_data1)*0.7 # training sample size
+tr_ind <-sample(nrow(my_data1),tr_size)
+data_tr <-my_data1[tr_ind, ] # training data
+data_te <-my_data1[-tr_ind, ] # test data
+ncol(my_data1)
+nrow(my_data1)
+nrow(data_tr)
+nrow(data_te)
+```
+
+# Linear model building and statistical diagnosis
+
+```{r}
+set.seed(0)
+model<-lm(Life.expectancy~.,data_tr)
+summary(model)
+```
+
+Base on the adjusted R-squared and the P-value of the full model,Using a linear model is appropriate.
+
+First, we need to do a thorough analysis of the full model.
+
+## 1.Anomaly Detection
+
+### leverage Points
+
+```{r}
+hat_plot<-function(fit) {
+p<-length(coefficients(fit))
+n<-length(fitted(fit))
+plot(hatvalues(fit),main='Hat Values',col='orange')
+abline(h=2*p/n,col='blue',lty=2)
+}
+hat_plot(model)
+```
+
+By combining the definition of high leverage points with the diagram above we can see that there are many high leverage points in the model.
+
+### Outliers
+
+```{r}
+check_outliers(model)
+```
+```{r}
+plot(model,which=3,col='blue')
+```
+
+Using the above graph and tests we can obtain that the initial model has no outliers.
+
+### Influential Point
+
+```{r message=FALSE, warning=FALSE}
+influencePlot(model,id.method='identify',main='Influence Point',col='purple')
+```
+
+Some anomalies are given in the above graph, but we found that the 1901st sample with the largest Cook distance has a Cook distance value of about 0.1029, which is less than 0.5, and this data sample is large, so we do not think there are strong influence points that need to be removed from this model.
+
+## Analysis of Gaussian-Markov Assumptions 
+
+### Zero-mean Assumption
+
+```{r}
+mean(model$residuals)
+```
+
+Based on the above calculations, the model residuals are very close to 0.
+
+### Homoskedasticity Assumption
+```{r}
+bptest(model)
+bptest(model,studentize=F)
+```
+
+We found that although the p-values did not differ they were all less than 0.05, indicating that there was strong heteroskedasticity in the model. However, the BP values with studentisation removed increased, suggesting that studentisation played a role in correcting for heteroskedasticity, but not significantly in this case.
+
+
+### Normality Assumption
+
+```{r}
+shapiro.test(model$residuals)
+dev.new()
+qqPlot(model,labels=row.names(df),id.method='identify',simulate=T,main='Q-Q Plot')
+```
+
+In the Q-Q plot above, the blue shaded area is the 95% confidence interval and the two outlier sample points that were detected, for the 1901st and 2300th samples.
+
+```{r}
+residplot<-function(model,nbreaks=10){
+z<-rstudent(model)
+hist(z,breaks=nbreaks,freq=F,
+xlab='Studentized Residual',
+main='Distribution of Residuals')
+rug(jitter(z),col='brown')
+curve(dnorm(x,mean=mean(z),sd=sd(z)),add=T,col='blue',lwd=2)
+lines(density(z)$x,density(z)$y,col="red",lwd=2,lty=2)
+legend('topright',legend=c('Normal Curve','Kernel Density Curve'),
+lty=1:2,col=c('blue','red'),cex=.7)
+}
+residplot(model)
+```
+
+We can see from the residual distribution graph that the model residuals are almost completely unbiased. This is one of the reasons why subsequently when we used the BOX-COX variation to calculate the lambda we found that its confidence interval contained 1, i.e. the BOX-COX transformation was not necessary. In addition to this the problem of heteroskedasticity can also have an impact on the effectiveness of the BOX-COX transformation.
+
+From the graphs above and the results of the tests we can conclude that the initial model residuals do not obey normality, but rather suffer from some heavy tails.
+
+
+### Linearity Assumption
+
+We would have liked to use a deviation residual plot for this test, but the model has too many predictors and a large sample, and the RMD does not have enough computing power to give results. At the end of this section, we will use check_model() to find out about linearity.
+
+
+### Randomness Assumption
+
+```{r}
+dwtest(model)
+```
+
+From the p-values of the above results we can conclude that there is no first order autocorrelation problem with the model.
+
+
+### No Multicollinearity Assumption
+
+First we can take a cursory look at the two-by-two correlation between the variables using a thermogram of the Pearson correlation coefficient matrix.
+
+```{r message=FALSE, warning=FALSE}
+M=cor(my_data1)
+corrplot(M,method='ellipse',type='upper',tl.col='black',tl.pos='d',tl.cex=0.7,show.legend=T,outline=T,title='Pearson Correlation Coefficient Thermogram',mar=c(0,0,1,0))
+```
+
+However, Pearson's correlation coefficient can only show the correlation between two variables. In practical problems there may be problems with correlations between more than one variable, so for a further and clearer view we introduce the variance inflation factor.
+
+```{r}
+alias(model)
+```
+
+The above checks revealed that none of the predictors in the data had a large number of identical data, leading to problems where parameters could not be fitted or vif could not be calculated.
+
+```{r message=FALSE, warning=FALSE}
+pander(vif(model),caption='Vif of Full Model')
+```
+
+Using the above graphs we find that several predictors of 'infant.deaths', 'per centage.expenditure', 'under.five.deaths', 'GDP' have VIFs greater than 10 and their presence leads to serious multicollinearity problems.
+
+## 3.Model overview
+
+Finally, let's look at the statistical diagnosis of the full model as a whole.
+
+```{r}
+check_model(model,verbose=T,check=c('outliers','vif','normality','linearity'))
+```
+
+In this section we find that the pass test results for the full model, although fair overall, suffer mainly from multicollinearity, heteroskedasticity and non-normality. In the next section we will try to address these problems using the methods we have learned.
+
+
+# Model Transformation And Adjustment
+
+## 1.Box-Cox Transformation
+
+In the previous section we found that there was a problem with the normality of the residuals of the full model, so we tried to solve it using the BOX-COX transform.
+
+```{r}
+boxcox(model, plotit=T)
+b<-boxcox(model, plotit=T,lambda=seq(0.7,1.5,by=0.01))
+I=which(b$y==max(b$y))
+b$x[I]
+
+lmod_trans<-lm(Life.expectancy ^(1.136) ~ Adult.Mortality + infant.deaths + Alcohol + 
+                 percentage.expenditure + Hepatitis.B + BMI + under.five.deaths + 
+                 Polio + Diphtheria + HIV.AIDS + thinness.5.9.years + 
+                 Income.composition.of.resources + Schooling + Developing, 
+               data = data_tr)
+summary(lmod_trans)
+dwtest(lmod_trans)
+shapiro.test(lmod_trans$residuals)
+bptest(lmod_trans)
+```
+
+Based on the above graph we find that the 95% confidence interval for A contains 1, so we do not see the need to use the BOX-COX transformation.In fact, our model still fails the S-W test after the transformation using the best lambda values, which we believe may be due to problems with the variance of the model residuals.
+
+
+## 2.Newey-West Adjustments
+
+The presence of heteroskedasticity affects the fit of the linear model, making t-tests and F-tests no longer valid, so in the presence of heteroskedasticity we use heteroskedasticity robust standard errors instead of standard errors. We use white consistent standard errors for hypothesis testing. We use vcovHC() from the sandwich package for this purpose. Also using the NeweyWest() function allows for heteroskedasticity and autocorrelation robustness Newey-West adjustments.
+```{r}
+model_nw<-NeweyWest(model)
+(neweywest<-coeftest(model,vcov=NeweyWest(model)))
+summary(model)
+```
+
+From the summary table we can see that the robustness estimates differ slightly from the initial estimates, with the variables 'Polio','Diphtheria' in the initial estimates changing from significant to insignificant, which confirms the above statement. However, since this adjustment has little effect on either the fitted parameters of the model or the results of the y predictor x significance test j, we also do not intend to use
+
+
+# Model Variables Selection
+
+## 1.AIC Selection
+
+```{r}
+step(model) 
+# Find model with lowest AIC
+lmod_AIC_B<-lm(Life.expectancy ~ Adult.Mortality + infant.deaths + Alcohol + 
+                 percentage.expenditure + Hepatitis.B + BMI + under.five.deaths + 
+                 Polio + Diphtheria + HIV.AIDS + thinness.5.9.years + 
+                 Income.composition.of.resources + Schooling + Developing, 
+               data = data_tr) # AIC selected model
+sum_AIC_B<-summary(lmod_AIC_B)
+sum_AIC_B
+```
+
+From the summary we can find that the model selected by the backward iterative AIC method, most certainly all predictors are statistically significant, but the adjusted R-squared does not change much compared to the full model, and we will subsequently judge whether this model should be used by the model's prediction error perspective
+
+## 2.BIC Selection
+```{r}
+set.seed(0)
+fit_null<-lm(Life.expectancy~1,data_tr)
+step(fit_null, scope = list(lower = fit_null, upper = model), direction = "both",
+criterion = "BIC")
+lmod_BIC_BO<-lm(Life.expectancy ~ Schooling + HIV.AIDS + Adult.Mortality + 
+                  Income.composition.of.resources + 
+                  percentage.expenditure + BMI + Diphtheria + Alcohol,data_tr) # BIC selected model
+sum_BIC_BO<-summary(lmod_BIC_BO)
+sum_BIC_BO
+```
+
+From the summary we can find that the model chosen by the backward iterative BIC method, most certainly all predictors are statistically significant, but the adjusted R-squared is even lower than the full model, and subsequently we will judge whether this model should be used by the model's prediction error perspective.
+
+## 3.Selection ideas for other model selection methods
+
+In the statistical diagnosis section of the model, we find that the full model suffers from multicollinearity and heteroskedasticity. GLS estimation is usually used when the m-model error term does not satisfy the "spherical perturbation assumption" (i.e. homoskedasticity assumption and no autocorrelation assumption in the G-M assumption). Ridge regression, lasso regression and adaptive lasso regression are all methods of constraining the fitted parameters by adding penalty factors. We will try each of these below.
+
+## 4.Ridge Selection
+
+```{r}
+set.seed(0)
+x_tr<-as.matrix(data_tr[,c(2:ncol(data_tr))])
+y_tr<-as.matrix(data_tr[,1])
+x_te<-as.matrix(data_te[,c(2:ncol(data_te))])
+y_te<-as.matrix(data_te[,1])
+set.seed(0)
+ridge<-glmnet(x=x_tr,y=y_tr,alpha=0)
+plot(ridge,xvar='lambda')
+```
+
+
+```{r}
+ridge_cv<-cv.glmnet(x=x_tr,y=y_tr,type.measure='mse',nfold=10,alpha=0)
+#plot(ridge_cv)
+```
+
+```{r}
+ridge_cv$lambda.min
+best_ridge<-coef(ridge_cv, s = ridge_cv$lambda.min)
+```
+
+
+## 5.Lasso Selection
+```{r}
+set.seed(0)
+lasso<-glmnet(x=x_tr,y=y_tr,alpha=1)
+plot(lasso,xvar='lambda')
+```
+```{r}
+lasso_cv<-cv.glmnet(x=x_tr,y=y_tr,type.measure='mse',nfold=10,alpha=1,keep=T)
+#plot(lasso_cv)
+lasso_cv$lambda.min
+```
+
+
+## 6.Adaptive Lasso Selection
+```{r}
+set.seed(0)
+alasso<-glmnet(x=x_tr,y=y_tr,alpha=1,penalty.factor=1/abs(best_ridge[-1]))
+plot(alasso,xvar='lambda')
+```
+
+```{r}
+alasso_cv<-cv.glmnet(x=x_tr,y=y_tr,type.measure='mse',nfold=10,alpha=1,penalty.factor=1/abs(best_ridge[-1]),keep=T)
+#plot(alasso_cv)
+```
+```{r}
+alasso_cv$lambda.min
+```
+
+## 7.Error Comparison And Confirmation of Final Model
+
+Next we will calculate the prediction error of each model in the training set:
+
+```{r}
+result_full<-predict(model,newdata=data_te,interval='prediction') 
+(err_full<-mean((data_te$Life.expectancy-result_full)^2))
+
+result_aic<-predict(lmod_AIC_B,newdata=data_te,interval='prediction') 
+(err_aic<-mean((data_te$Life.expectancy-result_aic)^2))
+
+result_bic<-predict(lmod_BIC_BO,newdata = data_te,interval='prediction') 
+(err_bic<-mean((data_te$Life.expectancy-result_bic)^2))
+
+result_ridge<-predict(ridge_cv,newx=x_te,interval='prediction') 
+(err_ridge<-mean((y_te-result_ridge)^2))
+
+result_la<-predict(lasso_cv,newx=x_te,interval='prediction') 
+(err_la<-mean((y_te-result_la)^2))
+
+result_adala<-predict(alasso_cv,newx=x_te,interval='prediction') 
+(err_adala<-mean((y_te-result_adala)^2))
+
+which.min(c(err_full, err_aic, err_bic, err_ridge, err_la, err_adala))
+```
+
+From the above results we can see that the model selected using the 10-fold lasso method has the smallest test error and a significant reduction compared to the original model, so we will finally choose this model.
+
+```{r}
+(best_alasso_coef<-coef(alasso_cv,s=alasso_cv$lambda.min))
+```
+
+So our final model will be:
+$$
+Life.expectancy=53.038475594-0.012413848*Adult.Mortality-0.127001514*Alcohol+0.024103630*BMI+
+\\\\0.005072368*Diphtheria-0.488547396*HIV.AIDS-0.003011737*thinness..1.19.years-
+\\\\0.038537048*thinness.5.9.years+12.882346015*Income.composition.of.resources+
+\\\\0.999554558*Schooling-1.695027771*Developing
+$$
+
+# Model prediction
+
+In this section we will use our selected 10-fold lasso model to make predictions and compare them with the true values, by way of icons to see the predictions.
+
+```{r}
+x_gr<-1:495
+y_pred<-predict(lasso_cv,x_te)
+df<-data.frame(x_gr,y_te,y_pred)
+names(df)<-c('x_gr','Ture value','Predicted Value')
+df_long<-melt(df,id.vars='x_gr')
+P<-ggplot(df_long,aes(x_gr,value,col=variable))+
+geom_xspline()+labs(x='Test set individual',y='Value')+theme_light()
+grid.arrange(textGrob('10-Fold Cv Lasso Model Prediction Results',
+             gp=gpar(fontsize =2*8, fontface ='italic')),
+             P,
+             heights=c(0.1,1))
+```
+
+As we can see from the graph above, the predicted values are close to the true values, which means that the model is successful in its predictions.
