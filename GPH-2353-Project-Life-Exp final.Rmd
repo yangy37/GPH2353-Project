@@ -2,6 +2,7 @@
 title: |
     | \huge 2353 Final Project Life Exp\vspace{1cm}
 author: |
+   | \large Team: A Plus
    | \large Yi Yang & Weiyi(David) Gong & Xiaolong Wang & Zeming Ren  \vspace{1cm}
 date: '2023-04-15'
 toc: yes
@@ -54,6 +55,14 @@ my_data1 <- my_data %>%
   mutate(Developing = as.integer(Status == "Developing")) # Change status to numeric
 my_data1<-my_data1[,-c(1, 2, 3)] # remove country, year, status
 pander(summary(my_data1),caption='Descriptive Statistics of The Data')
+
+my_data1 %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_histogram()
+
 ```
 
 ```{r}
@@ -77,6 +86,11 @@ nrow(data_te)
 
 ```{r}
 set.seed(0)
+model<-lm(Life.expectancy~GDP,data_tr)
+summary(model)
+model<-lm(Life.expectancy~GDP + GDP : ,data_tr)
+summary(model)
+
 model<-lm(Life.expectancy~.,data_tr)
 summary(model)
 ```
@@ -308,7 +322,6 @@ plot(ridge,xvar='lambda')
 
 ```{r}
 ridge_cv<-cv.glmnet(x=x_tr,y=y_tr,type.measure='mse',nfold=10,alpha=0)
-#plot(ridge_cv)
 ```
 
 ```{r}
@@ -325,7 +338,6 @@ plot(lasso,xvar='lambda')
 ```
 ```{r}
 lasso_cv<-cv.glmnet(x=x_tr,y=y_tr,type.measure='mse',nfold=10,alpha=1,keep=T)
-#plot(lasso_cv)
 lasso_cv$lambda.min
 ```
 
@@ -339,7 +351,6 @@ plot(alasso,xvar='lambda')
 
 ```{r}
 alasso_cv<-cv.glmnet(x=x_tr,y=y_tr,type.measure='mse',nfold=10,alpha=1,penalty.factor=1/abs(best_ridge[-1]),keep=T)
-#plot(alasso_cv)
 ```
 ```{r}
 alasso_cv$lambda.min
