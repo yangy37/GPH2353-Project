@@ -65,8 +65,8 @@ my_data1 %>%
     facet_wrap(~ key, scales = "free") +
     geom_histogram()
 
-my_data1 %>%
-  skewness()
+pander(skewness(my_data1),caption='Skewness of numeric data')
+  
 ```
 
 ```{r}
@@ -87,13 +87,16 @@ nrow(data_te)
 ```
 
 # Linear model building and statistical diagnosis
-
+Model 1
 ```{r}
 set.seed(0)
 
 model<-lm(Life.expectancy~.,data_tr)
 summary(model)
+```
 
+Model 2
+```{r}
 model_select<-lm(Life.expectancy~ BMI + Adult.Mortality + infant.deaths + under.five.deaths + HIV.AIDS
            + Income.composition.of.resources + Schooling,data_tr)
 summary(model_select)
@@ -106,12 +109,47 @@ anova(model_select, model_int)
 ```
 
 Base on the adjusted R-squared and the P-value of the full model,Using a linear model is appropriate.
-A multiple regression was used to study whether the effect of the BMI number on Country's Developing levels.
-Results indicated that both BMI and Country's Developing levels are both associated with the academic performance of the school.
-The interaction between BMI and Country's Developing levels was not significant.
-Base on the Anova test, We reject the null hypothesis that the interaction is 0
+A multiple regression was used to study whether the effect of the BMI number on Country's Developing levels. Results indicated that both BMI and Country's Developing levels are both associated with the academic performance of the school. The interaction between BMI and Country's Developing levels is significant.
+Base on the Anova test, We reject the null hypothesis that the interaction is 0. 
 
 First, we need to do a thorough analysis of the interaction model.
+
+
+# Model Transformation And Adjustment
+
+## 1.Box-Cox Transformation
+
+In the previous section we found that there was a problem with the normality of the residuals of the full model, so we tried to solve it using the BOX-COX transform.
+
+```{r}
+boxcox(model_int, plotit=T)
+b<-boxcox(model_int, plotit=T,lambda=seq(0.5,1.3,by=0.01))
+I=which(b$y==max(b$y))
+b$x[I]
+
+lmod_trans<-lm(Life.expectancy ^(0.920202) ~ BMI + Adult.Mortality+ infant.deaths + under.five.deaths + HIV.AIDS
+           + Income.composition.of.resources + Schooling + Developing +  BMI : Developing, data = data_tr)
+summary(lmod_trans)
+dwtest(lmod_trans)
+shapiro.test(lmod_trans$residuals)
+bptest(lmod_trans)
+```
+
+Based on the above graph we find that the 95% confidence interval for A contains 1, so we do not see the need to use the BOX-COX transformation.In fact, our model still fails the S-W test after the transformation using the best lambda values, which we believe may be due to problems with the variance of the model residuals.
+
+
+## 2.Newey-West Adjustments
+
+The presence of heteroskedasticity affects the fit of the linear model, making t-tests and F-tests no longer valid, so in the presence of heteroskedasticity we use heteroskedasticity robust standard errors instead of standard errors. We use white consistent standard errors for hypothesis testing. We use vcovHC() from the sandwich package for this purpose. Also using the NeweyWest() function allows for heteroskedasticity and autocorrelation robustness Newey-West adjustments.
+```{r}
+model_nw<-NeweyWest(model_int)
+(neweywest<-coeftest(model_int,vcov=NeweyWest(model_int)))
+summary(model_int)
+```
+
+From the summary table we can see that the robustness estimates differ slightly from the initial estimates, with the variables 'Polio','Diphtheria' in the initial estimates changing from significant to insignificant, which confirms the above statement. However, since this adjustment has little effect on either the fitted parameters of the model or the results of the y predictor x significance test j, we also do not intend to use
+
+
 
 ## 1.Anomaly Detection
 
@@ -243,44 +281,6 @@ check_model(model_int,verbose=T,check=c('outliers','vif','normality','linearity'
 ```
 
 In this section we find that the pass test results for the full model, although fair overall, suffer mainly from multicollinearity, heteroskedasticity and non-normality. In the next section we will try to address these problems using the methods we have learned.
-
-
-# Model Transformation And Adjustment
-
-## 1.Box-Cox Transformation
-
-In the previous section we found that there was a problem with the normality of the residuals of the full model, so we tried to solve it using the BOX-COX transform.
-
-```{r}
-boxcox(model_int, plotit=T)
-b<-boxcox(model_int, plotit=T,lambda=seq(0.5,1.3,by=0.01))
-I=which(b$y==max(b$y))
-b$x[I]
-
-lmod_trans<-lm(Life.expectancy ^(0.920202) ~ Adult.Mortality + infant.deaths + Alcohol + 
-                 percentage.expenditure + Hepatitis.B + BMI + under.five.deaths + 
-                 Polio + Diphtheria + HIV.AIDS + thinness.5.9.years + 
-                 Income.composition.of.resources + Schooling + Developing, 
-               data = data_tr)
-summary(lmod_trans)
-dwtest(lmod_trans)
-shapiro.test(lmod_trans$residuals)
-bptest(lmod_trans)
-```
-
-Based on the above graph we find that the 95% confidence interval for A contains 1, so we do not see the need to use the BOX-COX transformation.In fact, our model still fails the S-W test after the transformation using the best lambda values, which we believe may be due to problems with the variance of the model residuals.
-
-
-## 2.Newey-West Adjustments
-
-The presence of heteroskedasticity affects the fit of the linear model, making t-tests and F-tests no longer valid, so in the presence of heteroskedasticity we use heteroskedasticity robust standard errors instead of standard errors. We use white consistent standard errors for hypothesis testing. We use vcovHC() from the sandwich package for this purpose. Also using the NeweyWest() function allows for heteroskedasticity and autocorrelation robustness Newey-West adjustments.
-```{r}
-model_nw<-NeweyWest(model_int)
-(neweywest<-coeftest(model_int,vcov=NeweyWest(model_int)))
-summary(model_int)
-```
-
-From the summary table we can see that the robustness estimates differ slightly from the initial estimates, with the variables 'Polio','Diphtheria' in the initial estimates changing from significant to insignificant, which confirms the above statement. However, since this adjustment has little effect on either the fitted parameters of the model or the results of the y predictor x significance test j, we also do not intend to use
 
 
 # Model Variables Selection
